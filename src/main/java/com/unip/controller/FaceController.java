@@ -60,42 +60,62 @@ public class FaceController {
     }
 
     @PostMapping("/register")
-    public ResponseEntity<String> registerFace(@RequestParam("image") MultipartFile image, @RequestParam("name") String name, @RequestParam("email") String email, @RequestParam("role") Role role) {
+    public ResponseEntity<Map<String, Object>> registerFace(@RequestParam("image") MultipartFile image, @RequestParam("name") String name, @RequestParam("email") String email, @RequestParam("role") Role role) {
+
+        Map<String, Object> response = new HashMap<>();
 
         try {
             Mat matImage = convertMultipartFileToMat(image);
             CompletableFuture<String> future = new CompletableFuture<>();
+
             faceService.register(matImage, name, email, role, message -> {
                 future.complete(message);
             });
-            String result = future.get(10, TimeUnit.SECONDS);
 
-            Map<String, Object> response = new HashMap<>();
-            response.put("sucess", true);
-            response.put("message", result)
+            String result = future.get(30, TimeUnit.SECONDS);
+
+            response.put("success", result.contains("✅"));
+            response.put("message", result);
             response.put("user", Map.of("name", name, "email", email, "role", role));
             
-            return ResponseEntity.ok(result);
+            return ResponseEntity.ok(response);
+
         } catch (IOException e) {
-            return ResponseEntity.badRequest().body("Erro ao processar imagem");
+            response.put("success", false);
+            response.put("message", "Erro ao processar imagem");
+            return ResponseEntity.badRequest().body(response);
         } catch (TimeoutException e) {
-            return ResponseEntity.badRequest().body("Timeout - processamento muito longo");
+            response.put("success", false);
+            response.put("message", "Timeout - processamento muito longo");
+            return ResponseEntity.badRequest().body(response);
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body("Erro interno: " + e.getMessage());
+            response.put("success", false);
+            response.put("message", "Erro interno: " + e.getMessage());
+            return ResponseEntity.badRequest().body(response);
         }
     }
 
     @PostMapping("/authenticate")
-    public ResponseEntity<String> authenticatedFace (@RequestParam("image") MultipartFile image) {
+    public ResponseEntity<Map<String, Object>> authenticatedFace (@RequestParam("image") MultipartFile image) {
+        Map<String, Object> response = new HashMap<>();
+        
         try {
             Mat matImage = convertMultipartFileToMat(image);
             final String[] resultMessage = new String[1];
             faceService.authenticate(matImage, message -> {
                 resultMessage[0] = message;
             });
-            return ResponseEntity.ok(resultMessage[0]);
+            response.put("success", resultMessage[0] != null && resultMessage[0].contains("✅"));
+            response.put("message", resultMessage[0]);
+            return ResponseEntity.ok(response);
         } catch (IOException e) {
-            return ResponseEntity.badRequest().body("Erro ao processar imagem");
+            response.put("success", false);
+            response.put("message", "Erro ao processar imagem: " + e.getMessage());
+            return ResponseEntity.badRequest().body(response);
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", "Erro interno: " + e.getMessage());
+            return ResponseEntity.badRequest().body(response);
         }
     }
 

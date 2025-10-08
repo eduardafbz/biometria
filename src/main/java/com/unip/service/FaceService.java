@@ -14,11 +14,10 @@ import java.util.*;
 import java.util.function.Consumer;
 
 import static org.bytedeco.opencv.global.opencv_core.CV_32SC1;
-import static org.bytedeco.opencv.global.opencv_imgproc.cvtColor;
-import static org.bytedeco.opencv.global.opencv_imgproc.COLOR_BGR2GRAY;
 
 public class FaceService {
     private final FaceRecognizer faceRecognizer;
+    private final FaceDetectionService faceDetectionService;
     private final Map<Integer, String> idToNameMap = new HashMap<>();
     private final Map<Integer, String> idToEmailMap = new HashMap<>();
     private final Map<Integer, Role> idToRoleMap = new HashMap<>();
@@ -32,19 +31,23 @@ public class FaceService {
 
     public FaceService() {
         faceRecognizer = LBPHFaceRecognizer.create();
+        faceDetectionService = new FaceDetectionService();
         loadLabels();
         retrainModel();
     }
 
     public void register(Mat face, String personName, String email, Role role, Consumer<String> callback) {
-        Mat grayFace = new Mat();
-        cvtColor(face, grayFace, COLOR_BGR2GRAY);
+        try {
+            //detectar rosto
+            Optional<Mat> detectedFace = faceDetectionService.detectAndExtractFace(face);
+            if (detectedFace.isEmpty()) {
+                callback.accept("❌ Erro: Nenhum rosto detectado na imagem!");
+                return;
+            }
 
-        // Liminar mais alta - Evita falsos positivos
-        double LIMIAR_DUPLICATA = 50.0;
+            Mat grayFace = detectedFace.get();
 
-        if (!idToNameMap.isEmpty()) {
-            try {
+            if (!idToNameMap.isEmpty()) {
                 IntPointer label = new IntPointer(1);
                 DoublePointer confidence = new DoublePointer(1);
                 faceRecognizer.predict(grayFace, label, confidence);
@@ -54,62 +57,77 @@ public class FaceService {
 
                 if (conf < LIMIAR_DUPLICATA) {
                     String existingName = idToNameMap.get(label.get(0));
-                    callback.accept("❌ Erro: Rosto já registrado como '" + existingName + "'");
+                    callback.accept("❌ Erro: Rosto já registrado como ' " + existingName + "'");
                     return;
                 }
-            } catch (Exception e) {
-                System.out.println("Modelo não treinado, primeiro registro...");
             }
+
+             //Verificar se email já existe
+            if (idToEmailMap.containsValue(email)) {
+                callback.accept("❌ Erro: Email já registrado");
+                return;
+            }
+            
+            int personId = nextId++;
+            idToNameMap.put(personId, personName);
+            idToEmailMap.put(personId, email);
+            idToRoleMap.put(personId, role);
+
+            File personDir = new File(FACES_DIR, String.valueOf(personId));
+            personDir.mkdirs();
+            String filename = new File(personDir, System.currentTimeMillis() + ".png").getAbsolutePath();
+            opencv_imgcodecs.imwrite(filename, grayFace);
+
+            saveLabels();
+            retrainModel();
+
+            callback.accept("✅ Sucesso: " + personName + " registrado com email " + email + ", nível " + role);
+
+        } catch (Exception e) {
+            callback.accept("❌ Erro no registro: " + e.getMessage());
+            e.printStackTrace();
         }
-
-        //Verificar se email já existe
-        if (idToEmailMap.containsValue(email)) {
-            callback.accept("❌ Erro: Email já registrado");
-            return;
-        }
-
-        int personId = nextId++;
-        idToNameMap.put(personId, personName);
-        idToEmailMap.put(personId, email);
-        idToRoleMap.put(personId, role);
-
-        File personDir = new File(FACES_DIR, String.valueOf(personId));
-        personDir.mkdirs();
-        String filename = new File(personDir, System.currentTimeMillis() + ".png").getAbsolutePath();
-        opencv_imgcodecs.imwrite(filename, grayFace);
-
-        saveLabels();
-        retrainModel();
-
-        callback.accept("✅ Sucesso: " + personName + " registrado com email " + email + ", nível " + role);
+    
     }
 
     public void authenticate(Mat face, Consumer<String> callback) {
-        if (idToNameMap.isEmpty()) {
+        try{
+            if (idToNameMap.isEmpty()) {
             callback.accept("❌ Erro: Nenhum rosto registrado no sistema!");
             return;
-        }
+            }
+            
+            //detectar rosto
+            Optional<Mat> detectedFace = faceDetectionService.detectAndExtractFace(face);
+            if (detectedFace.isEmpty()) {
+                callback.accept("❌ Erro: Nenhum rosto detectado na imagem!");
+                return;
+            }
 
-        IntPointer label = new IntPointer(1);
-        DoublePointer confidence = new DoublePointer(1);
+            Mat grayFace = detectedFace.get();
 
-        Mat grayFace = new Mat();
-        cvtColor(face, grayFace, COLOR_BGR2GRAY);
-        faceRecognizer.predict(grayFace, label, confidence);
+            //reconhecer
+            IntPointer label = new IntPointer(1);
+            DoublePointer confidence = new DoublePointer(1);
+            faceRecognizer.predict(grayFace, label, confidence);
 
-        int predictedLabel = label.get(0);
-        double conf = confidence.get(0);
+            int predictedLabel = label.get(0);
+            double conf = confidence.get(0);
 
-        // Limiar de reconhecimento aumentado
-        double LIMIAR_RECONHECIMENTO = 60.0;
+            System.out.println("DEBUG AUTH = Label: " + predictedLabel + ", Confiança: " + conf);
 
-        if (predictedLabel == -1 || conf > LIMIAR_RECONHECIMENTO) {
-            callback.accept("❌ Rosto não reconhecido (confiança: " + conf + ")");
-        } else {
-            String personName = idToNameMap.get(predictedLabel);
-            String email = idToEmailMap.get(predictedLabel);
-            callback.accept("✅ Autenticado como: " + personName + " (" + email + ") - Confiança: " + conf);
-        }
+            if (predictedLabel == -1 || conf > LIMIAR_RECONHECIMENTO) {
+                callback.accept("❌ Rosto não reconhecido (confiança: " + String.format("%.2f", conf) + ")");
+            } else {
+                String personName = idToNameMap.get(predictedLabel);
+                String email = idToEmailMap.get(predictedLabel);
+                Role role = idToRoleMap.get(predictedLabel);
+                callback.accept("✅ Autenticado como: " + personName + " (" + email + ") - Nível: " + role + " - Confiança: " + String.format("%.2f", conf));
+            }
+        } catch (Exception e) {
+            callback.accept("❌ Erro na autenticação: " + e.getMessage());
+            e.printStackTrace();
+        }  
     }
 
     private void retrainModel() {
