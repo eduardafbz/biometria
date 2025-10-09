@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.image.*?>
+<?import javafx.scene.layout.*?>
+
+<VBox xmlns="http://javafx.com/javafx"
+      xmlns:fx="http://javafx.com/fxml"
+      fx:controller="com.unip.controller.UIController"
+      spacing="10" alignment="CENTER" style="-fx-padding: 20;">
+
+    <RadioButton fx:id="cameraToggle" text="Camera Off" />
+    <RadioButton fx:id="markFacesToggle" text="Mark Faces" />
+
+    <Button fx:id="registerFaceButton" text="Register new face" />
+    <Button fx:id="authFaceButton" text="Authenticate face" />
+
+    <ImageView fx:id="cameraView" fitWidth="600" fitHeight="400" preserveRatio="true" />
+</VBox>

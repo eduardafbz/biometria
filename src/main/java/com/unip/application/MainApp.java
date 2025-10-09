@@ -1,32 +1,45 @@
 package com.unip.application;
 
-import com.unip.controller.UIController;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.autoconfigure.domain.EntityScan;
+import org.springframework.boot.builder.SpringApplicationBuilder;
+import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
+
+import com.unip.util.SpringFxmlLoader;
 
 import javafx.application.Application;
-import javafx.fxml.FXMLLoader;
+import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.stage.Stage;
 
+@SpringBootApplication(scanBasePackages = "com.unip")
+@EnableJpaRepositories(basePackages = "com.unip.repository")
+@EntityScan(basePackages = "com.unip.model")
 public class MainApp extends Application {
+    private ConfigurableApplicationContext springContext;
 
-    public static void main(String[] args) {
-        launch(args); // inicia a aplicação JavaFX
+    @Override
+    public void init() {
+        springContext = new SpringApplicationBuilder(MainApp.class)
+                .run();
     }
 
     @Override
-    public void start(Stage stage) throws Exception {
-        FXMLLoader fxmlLoader = new FXMLLoader(getClass().getResource("/view/CameraView.fxml"));
-        Scene scene = new Scene(fxmlLoader.load(), 800, 600);
-        stage.setTitle("Biometria - Câmera");
-        stage.setScene(scene);
+    public void start(Stage primaryStage) throws Exception {
+        SpringFxmlLoader loader = new SpringFxmlLoader(springContext);
+        Parent root = loader.load("/view/CameraView.fxml");
 
-        stage.setOnCloseRequest(event -> {
-            UIController controller = fxmlLoader.getController();
-            if (controller != null) {
-                controller.shutdown();
-            }
-        });
+        primaryStage.setScene(new Scene(root));
+        primaryStage.show();
+    }
 
-        stage.show();
+    @Override
+    public void stop() {
+        springContext.close();
+    }
+
+    public static void main(String[] args) {
+        launch(args);
     }
 }
