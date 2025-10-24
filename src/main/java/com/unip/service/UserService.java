@@ -13,4 +13,6 @@ public interface UserService {
     Optional<User> findByEmail(String email);
     boolean checkFaceId(String faceId);
     List<User> findAll();
+    void delete(Long id);
+    User update(User user);
 }
